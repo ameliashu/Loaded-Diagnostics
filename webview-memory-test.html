@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebView Memory Test</title>
+<style>
+  :root{--cream:#FBEADB;--coral:#EE7C5E;--coral-dark:#D9633F;--navy:#182B4D;--navy-2:#23365A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Hanken Grotesk',-apple-system,Segoe UI,Roboto,sans-serif;background:var(--cream);color:var(--navy);
+    padding:22px 16px 40px;line-height:1.45;max-width:560px;margin:0 auto}
+  h1{font-size:22px;margin-bottom:4px}
+  .sub{color:var(--navy-2);font-size:13px;margin-bottom:18px}
+  .verdict{border-radius:14px;padding:16px;margin-bottom:18px;color:#fff;font-weight:700;font-size:15px}
+  .verdict.yes{background:#2e7d52}.verdict.no{background:#a23b3b}.verdict.first{background:var(--navy)}
+  .verdict small{display:block;font-weight:400;opacity:.93;margin-top:6px;font-size:13px}
+  .box{background:#fff;border:1px solid rgba(24,43,77,.12);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+  .box h2{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--coral-dark);margin-bottom:8px}
+  .row{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid rgba(24,43,77,.08)}
+  .row:last-child{border-bottom:none}
+  .row b{font-weight:800}
+  .ok2{color:#2e7d52}.bad2{color:#a23b3b}
+  .val{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all;background:#FCF3EA;border-radius:8px;padding:8px;margin-top:6px}
+  .steps{font-size:13px;background:#fff;border-radius:14px;padding:14px 16px;border:1px dashed var(--coral);margin-bottom:14px}
+  .steps li{margin:5px 0 5px 18px}
+  button{width:100%;margin-top:8px;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer}
+  .b-navy{background:var(--navy);color:#fff}.b-coral{background:var(--coral);color:#fff}
+  button:active{opacity:.85}
+  .note{text-align:center;font-size:13px;color:#2e7d52;font-weight:700;min-height:18px;margin-top:8px}
+</style>
+</head>
+<body>
+  <h1>WebView Memory Test</h1>
+  <div class="sub">This checks whether the app's in-app browser remembers data between visits. If it does, customers enter their details only once — ever.</div>
+
+  <div id="verdict" class="verdict first">Checking…</div>
+
+  <ol class="steps" id="steps">
+    <li><b>First time:</b> just opened this and it stored a token below.</li>
+    <li><b>Fully close the app</b> (swipe it away), then reopen and tap the same web link again.</li>
+    <li>If it says <b>"Remembered"</b>, seamless one-time sign-in will work in this app.</li>
+  </ol>
+
+  <div class="box">
+    <h2>What survived</h2>
+    <div class="row"><span>localStorage</span><span id="ls-status">—</span></div>
+    <div class="row"><span>Cookie</span><span id="ck-status">—</span></div>
+    <div class="row"><span>Token first stored</span><span id="when">—</span></div>
+    <div class="row"><span>Times reopened &amp; remembered</span><span id="count">—</span></div>
+  </div>
+
+  <div class="box">
+    <h2>Stored token</h2>
+    <div class="val" id="token">—</div>
+  </div>
+
+  <button class="b-coral" onclick="copyAll()">Copy result to send back</button>
+  <button class="b-navy" onclick="forgetAll()">Forget / reset (start over)</button>
+  <div class="note" id="note"></div>
+
+<script>
+  var KEY='lr_memtest';
+  var lsOK=false, ckOK=false;
+
+  function setLS(v){ try{ localStorage.setItem(KEY,v); return true; }catch(e){ return false; } }
+  function getLS(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }
+  function delLS(){ try{ localStorage.removeItem(KEY); }catch(e){} }
+  function setCK(v){ try{ document.cookie=KEY+'='+encodeURIComponent(v)+';max-age=31536000;path=/;SameSite=Lax'; return true; }catch(e){ return false; } }
+  function getCK(){ try{ var m=document.cookie.match(new RegExp('(?:^|; )'+KEY+'=([^;]*)')); return m?decodeURIComponent(m[1]):null; }catch(e){ return null; } }
+  function delCK(){ try{ document.cookie=KEY+'=;max-age=0;path=/'; }catch(e){} }
+
+  function newToken(){ return 'tok_'+Math.random().toString(36).slice(2,10)+'_'+Date.now(); }
+  function parseToken(t){ var p=(t||'').split('_'); var ts=parseInt(p[2],10); return isNaN(ts)?null:new Date(ts); }
+
+  // Try to read any previously stored record
+  var lsVal=getLS(), ckVal=getCK();
+  lsOK = lsVal!==null; ckOK = ckVal!==null;
+  var record = lsVal || ckVal;
+  var firstVisit = !record;
+
+  var data;
+  if(firstVisit){
+    data = { token:newToken(), count:0 };
+    persist(data);
+  } else {
+    try{ data = JSON.parse(record); }catch(e){ data = { token:record, count:0 }; }
+    data.count = (data.count||0) + 1;   // we were remembered → increment
+    persist(data);
+  }
+
+  function persist(d){
+    var s = JSON.stringify(d);
+    var a = setLS(s); var b = setCK(s);
+    lsOK = a && getLS()!==null;
+    ckOK = b && getCK()!==null;
+  }
+
+  // Render
+  document.getElementById('ls-status').innerHTML = lsOK ? '<span class="ok2">available ✓</span>' : '<span class="bad2">blocked ✕</span>';
+  document.getElementById('ck-status').innerHTML = ckOK ? '<span class="ok2">available ✓</span>' : '<span class="bad2">blocked ✕</span>';
+  var when = parseToken(data.token);
+  document.getElementById('when').textContent = when ? when.toLocaleString() : '—';
+  document.getElementById('count').textContent = data.count;
+  document.getElementById('token').textContent = data.token;
+
+  var v=document.getElementById('verdict');
+  if(firstVisit){
+    v.className='verdict first';
+    v.innerHTML='● First visit — token stored.<small>Now fully close the app and reopen this page from the same link. Then read the verdict again.</small>';
+  } else if(lsOK || ckOK){
+    v.className='verdict yes';
+    v.innerHTML='✓ Remembered! This app keeps web data between visits.<small>The token from your earlier visit was still here (reopened '+data.count+'×). A one-time sign-in will be seamless on this device.</small>';
+    document.getElementById('steps').style.display='none';
+  } else {
+    v.className='verdict no';
+    v.innerHTML='✕ Not remembered — this app clears web data each session.<small>Seamless "remember me" will not work here; customers would re-enter each time unless the platform passes identity in the link.</small>';
+  }
+
+  function copyAll(){
+    var t=['WEBVIEW MEMORY TEST',
+      'First visit this open: '+firstVisit,
+      'localStorage available: '+lsOK,
+      'Cookie available: '+ckOK,
+      'Token: '+data.token,
+      'First stored: '+(when?when.toISOString():'—'),
+      'Reopened & remembered count: '+data.count,
+      'UA: '+navigator.userAgent].join('\n');
+    if(navigator.clipboard){ navigator.clipboard.writeText(t).then(ok,function(){fb(t);}); } else fb(t);
+  }
+  function ok(){ document.getElementById('note').textContent='Copied — paste it back to share.'; }
+  function fb(t){ var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');ok();}catch(e){document.getElementById('note').textContent='Copy the Stored token box manually.';}document.body.removeChild(ta); }
+  function forgetAll(){ delLS(); delCK(); document.getElementById('note').textContent='Cleared. Reload to test as a fresh first visit.'; }
+</script>
+</body>
+</html>
